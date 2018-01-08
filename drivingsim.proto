@@ -18,10 +18,18 @@ message Config {
 }
 
 message DriveRequest {
+  // You, the current car being asked to drive.
   required Car current = 1;
-  required Car next = 2;
-  required float time_s = 3;
-  required float reward = 4;
+
+  // The car ahead of you.
+  required Car ahead = 2;
+
+  // Static parameter: The length of the track. (Allows interpretation of
+  // distances which might otherwise seem negative.)
+  required float length_m = 3;
+
+  required float time_s = 4;
+  required float reward = 5;
 }
 
 message DriveResponse {
