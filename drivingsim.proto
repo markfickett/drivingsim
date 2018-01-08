@@ -10,16 +10,18 @@ message Client {
 
 message Config {
   required float length_m = 1;
-  repeated Client clients = 2;
-  required float time_step_s = 3;
-  required float simulation_duration_s = 4;
-  required float max_velocity_m_s = 5;
+  required float start_spacing_m = 2;
+  repeated Client clients = 3;
+  required float time_step_s = 4;
+  required float simulation_duration_s = 5;
+  required float max_velocity_m_s = 6;
 }
 
 message DriveRequest {
   required Car current = 1;
-  required float distance_to_next_m = 2;
-  required float reward = 3;
+  required Car next = 2;
+  required float time_s = 3;
+  required float reward = 4;
 }
 
 message DriveResponse {

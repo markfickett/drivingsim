@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 
 from collections import namedtuple
+import time
 
+from display import Display
 from drivingsim_pb2 import Car
 from drivingsim_pb2 import Client
 from drivingsim_pb2 import Config
@@ -19,45 +21,50 @@ class _FakeConnection(object):
     return DriveResponse(acceleration_m_s2=9.8)
 
 
-class _Display(object):
-  def __init__(self, config):
-    self.length_m = config.length_m
-
-  def Update(self, car_list):
-    pass
-
-
 def Simulate(config):
-  display = Display(config)
+  display = Display(config.length_m)
   client_info_list = []
-  for client_spec in config.clients:
+  for i, client_spec in enumerate(config.clients):
     client_info = _ClientInfo(
         host=client_spec.host,
         port=client_spec.port,
-        car=Car(position_m=0.0, velocity_m_s=0.0),
+        car=Car(position_m=i * config.start_spacing_m, velocity_m_s=0.0),
         connection=_FakeConnection(client_spec.host, client_spec.port))
     client_info_list.append(client_info)
-  for _ in xrange(int(config.simulation_duration_s / config.time_step_s)):
+  simulated_seconds = 0.0
+  last_real_seconds = time.time()
+  while simulated_seconds <= config.simulation_duration_s:
     for client_info in client_info_list:
       car = client_info.car
       resp = client_info.connection.Drive(
           DriveRequest(
               current=car,
-              distance_to_next_m=10.0,
+              next=car,
+              time_s=simulated_seconds,
               reward=0.0))
       car.velocity_m_s = min(config.max_velocity_m_s, max(0,
           car.velocity_m_s + resp.acceleration_m_s2 * config.time_step_s))
       car.position_m = (
           car.position_m +
           (car.velocity_m_s * config.time_step_s)) % config.length_m
-    display.update([client_info.car for client_info in client_info_list])
+    display.Update([client_info.car for client_info in client_info_list])
+    simulated_seconds += config.time_step_s
+
+    current_real_seconds = time.time()
+    real_dt = current_real_seconds - last_real_seconds
+    if real_dt < config.time_step_s:
+      time.sleep(config.time_step_s - real_dt)
+    last_real_seconds = current_real_seconds
 
 
 if __name__ == '__main__':
   config = Config(
-      length_m=500,
-      time_step_s=1.0,
-      simulation_duration_s=60*60.0,
-      max_velocity_m_s=100.0)
+      length_m=500.0,
+      start_spacing_m=1.0,
+      time_step_s=1.0 / 24,
+      simulation_duration_s=60.0,
+      max_velocity_m_s=10.0)
   config.clients.add(host='localhost', port=8088)
+  config.clients.add(host='localhost', port=8087)
+  config.clients.add(host='localhost', port=8086)
   Simulate(config)
