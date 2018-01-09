@@ -98,6 +98,6 @@ if __name__ == '__main__':
       time_step_s=1.0 / 24,
       simulation_duration_s=60.0,
       max_velocity_m_s=50.0)
-  for _ in xrange(1):
+  for _ in xrange(20):
     config.clients.add(host='localhost', port=8088)
   Simulate(config)
