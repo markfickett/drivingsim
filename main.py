@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 from collections import namedtuple
+import socket
 import time
 
 from display import Display
@@ -13,33 +14,45 @@ from drivingsim_pb2 import DriveResponse
 _ClientInfo = namedtuple('ClientInfo', ('host', 'port', 'car', 'connection'))
 
 
-class _FakeConnection(object):
+CLIENT_TIMEOUT_MS = 10
+class _NetworkClientConnection(object):
   def __init__(self, host, port):
-    self._accel_m_s2 = -1.0
+    self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    self._sock.connect((host, port))
+    self._sock.settimeout(CLIENT_TIMEOUT_MS/1000.0)
 
-  def Drive(self, request):
-    dist_m = request.ahead.position_m - request.current.position_m
-    while dist_m < 0.0:
-      dist_m += request.length_m
-    if dist_m < 2.0:
-      self._accel_m_s2 = -5 * 9.8
-    elif dist_m > 50.0 and dist_m < 200.0 and self._accel_m_s2 < 5.0:
-      self._accel_m_s2 = 9.8
-    elif dist_m > 1.0 and self._accel_m_s2 < 0.0:
-      self._accel_m_s2 = 2.0
-    return DriveResponse(acceleration_m_s2=self._accel_m_s2)
+  def DriveAsync(self, proto_req):
+    self._sock.sendall(proto_req.SerializeToString())
+    sock = self._sock
+    class _AsyncResponse(object):
+      def Get(self):
+        return DriveResponse.FromString(sock.recv(1024))
+    return _AsyncResponse()
+
+  def Close(self):
+    self._sock.close()
 
 
 def Simulate(config):
   display = Display(config.length_m)
   client_info_list = []
+  connections_to_close = []
   for i, client_spec in enumerate(config.clients):
     client_info = _ClientInfo(
         host=client_spec.host,
         port=client_spec.port,
         car=Car(position_m=i * config.start_spacing_m, velocity_m_s=0.0),
-        connection=_FakeConnection(client_spec.host, client_spec.port))
+        connection=_NetworkClientConnection(client_spec.host, client_spec.port))
+    connections_to_close.append(client_info.connection)
     client_info_list.append(client_info)
+  try:
+    _RunSimulation(client_info_list, display)
+  finally:
+    for connection in connections_to_close:
+      connection.Close()
+
+
+def _RunSimulation(client_info_list, display):
   simulated_seconds = 0.0
   last_real_seconds = time.time()
   while simulated_seconds <= config.simulation_duration_s:
@@ -52,7 +65,7 @@ def Simulate(config):
           length_m=config.length_m,
           time_s=simulated_seconds,
           reward=0.0)
-      resp = client_info.connection.Drive(req)
+      resp = client_info.connection.DriveAsync(req).Get()
 
       car.velocity_m_s = min(config.max_velocity_m_s, max(0,
           car.velocity_m_s + resp.acceleration_m_s2 * config.time_step_s))
@@ -85,6 +98,6 @@ if __name__ == '__main__':
       time_step_s=1.0 / 24,
       simulation_duration_s=60.0,
       max_velocity_m_s=50.0)
-  for _ in xrange(20):
+  for _ in xrange(1):
     config.clients.add(host='localhost', port=8088)
   Simulate(config)
